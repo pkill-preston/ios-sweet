@@ -45,6 +45,24 @@ been verified on this phone.
     MPIDR panics with `machine_routines.c:1244 cpu_id <=
     ml_get_max_cpu_number()`. Kernel build: CI run `42859385837`;
     `artifacts/qemu/run18` boots to `VM bootstrap done` with only IRQs.
+- **Root ramdisk (unrun).** `tools/mkqemu-root.sh OUT.img` builds a 64 MiB HFS+
+  image whose only file is `/sbin/launchd` (a static arm64 Mach-O from
+  `tools/sweet-init.S` + `tools/mkinit.py`, 16636 bytes, verified on Linux).
+  `mkpayload.py --ramdisk` appends it and writes `/chosen/memory-map RAMDisk`,
+  which `IOFindBSDRoot` turns into `md0`; the boot arg is `rd=md0`.
+  **Blocked:** `mkfs.hfsplus`/`fsck.hfsplus` (hfsprogs) are not installed and
+  are AUR-only on Arch; the script needs sudo for the loop mount.
+- **RAM disk did not advance the boot (run19, 2026-11-10).** Booting the same
+  kernel with `--ramdisk` (mockfs route: the ramdisk is the init Mach-O itself,
+  so no HFS is needed) for 150 s still ends at `VM bootstrap done`: console
+  stops there, CPU 0 idles in `idle_thread` via `Call_continuation`, `qemu.log`
+  has only 8319 IRQs, no `md0`, no `BSD`, no panic. `mkpayload.py` did add the
+  RAMDisk segment (boot_args moved 0xc24c8000 -> 0xc24d0000). So the
+  `kernel_bootstrap_thread` blocks between VM bootstrap and `bsd_init`; that is
+  the current blocker, not the filesystem. Next probe: gdb stub on :1234 with
+  breakpoints at `kernel_bootstrap_thread`/`PE_init_iokit`/`bsd_init`
+  (note: kill the previous QEMU first, a stale one keeps :1234 and the next
+  `--gdb` run attaches to the old VM).
 - QEMU virtual-timer INTID is 27 (`-M virt` `/timer` PPI index 11 + 16); the
   phone's live FDT gives 19. `mkadt.py --qemu` emits `virtual-timer-intid`, and
   patch `0017` makes the kernel read it from the GIC node (a wrong value panics
@@ -61,8 +79,11 @@ been verified on this phone.
   hbp 0x50, hpw 0x04, vbp 0x0c, vfp 0x70, vpw 0x04, 60 Hz).
 - Touch driver: FocalTech FTS over SPI, IC 0x8719, reset GPIO 87, IRQ 88.
 - `mkadt.py --qemu` still emits one CPU; the QEMU harness runs `cpus=1` first.
-- Build a root ramdisk/image and re-run QEMU to get past `VM bootstrap done`
-  and confirm BSD mounts the root.
+- Install hfsprogs (`paru -S hfsprogs`), then `tools/mkqemu-root.sh
+  /tmp/root.img` and boot QEMU with `--ramdisk` + `rd=md0` to confirm
+  `BSD root: md0`, an HFS+ mount and init as PID 1.
+- Before any phone boot: verify the shim's `HANDOFF from=… to=0x100` path and
+  record the real boot CPU MPIDR (the A73 handoff has never run on hardware).
 - Names inherited from upstream (`sweet_ufs.c`, `GinkgoPlatformExpert`, the
   `site/` directory) are cosmetic leftovers; the device facts are what matter.
 
