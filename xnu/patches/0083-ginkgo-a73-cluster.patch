@@ -1,0 +1,76 @@
+xnu: boot only the four Cortex-A73s, which are the only 16KB-granule cores
+
+XNU is built with __ARM_16K_PG__, and Cortex-A53 implements only the 4KB
+and 64KB translation granules, so a silver core takes a translation fault
+the moment the MMU comes on (proven in QEMU: cortex-a72/a53 fail, a76
+boots). mkadt.py now lists just the A73s (MPIDR 0x100-0x103) as one
+homogeneous SMP cluster, and the shim starts the kernel on MPIDR 0x100
+with PSCI CPU_ON, so this driver must accept a boot CPU whose MPIDR is
+not 0 and cores whose Aff0 is not 0.
+
+--- a/xnu/pexpert/pexpert/arm64/GINKGO.h
++++ b/xnu/pexpert/pexpert/arm64/GINKGO.h
+@@ -19,12 +19,14 @@
+ #define GINKGO                     1
+ 
+ /*
+- * All eight cores (six A55 + two A76) as one homogeneous SMP cluster:
+- * cpus=N is clamped here. Same ISA level (ARMv8.2), 64-byte lines, PSCI
+- * CPU_ON; the scheduler does not know the A76s are faster (no AMP/P-E
+- * clusters yet).
++ * Only the four Cortex-A73s can run this kernel. XNU is built with 16KB
++ * pages (__ARM_16K_PG__), and the Cortex-A53 cluster implements only the
++ * 4KB and 64KB translation granules, so a silver core faults as soon as
++ * the MMU comes on. mkadt.py therefore lists just the A73s (MPIDR
++ * 0x100-0x103) as one homogeneous SMP cluster and the shim starts the
++ * kernel on MPIDR 0x100 with PSCI CPU_ON. cpus=N is clamped here.
+  */
+-#define GINKGO_SMP_MAX_CPUS         8
++#define GINKGO_SMP_MAX_CPUS         4
+ 
+ #define ARM_ARCH_TIMER
+ #define __ARM_ARCH__              8
+--- a/xnu/iokit/Kernel/arm/GinkgoCPU.cpp
++++ b/xnu/iokit/Kernel/arm/GinkgoCPU.cpp
+@@ -73,8 +73,11 @@
+ 	if (*(const uint32_t *)reg->getBytesNoCopy() != cpu->phys_id) {
+ 		return false;
+ 	}
+-	/* MPIDR Aff1 = core: 0x000-0x500 A55, 0x600/0x700 A76 */
+-	if (cpu->phys_id > 0x700 || (cpu->phys_id & 0xff) != 0 ||
++	/* ginkgo: the ADT lists only the Cortex-A73s, MPIDR 0x100-0x103
++	 * (0 is QEMU's single virt CPU). The Cortex-A53 cluster has no 16KB
++	 * granule, so it must never appear here (see GINKGO.h). */
++	if ((cpu->phys_id != 0 &&
++	    (cpu->phys_id < 0x100 || cpu->phys_id > 0x103)) ||
+ 	    topology->num_cpus > GINKGO_SMP_MAX_CPUS) {
+ 		panic("GINKGO CPU: invalid topology cpu=%u mpidr=0x%x count=%u",
+ 		    cpu->cpu_id, cpu->phys_id, topology->num_cpus);
+@@ -82,7 +85,7 @@
+ 	if (!IOCPU::start(provider)) {
+ 		return false;
+ 	}
+-	cpuName = OSSymbol::withCStringNoCopy("Kryo 470");
++	cpuName = OSSymbol::withCStringNoCopy("Kryo 260");
+ 	if (cpuName == NULL) {
+ 		return false;
+ 	}
+@@ -144,10 +147,14 @@
+ 		}
+ 		IOSleep(1);
+ 	}
+-	/* The supplied ADT has cpu0 as the boot CPU and ascending A55 nodes. */
+-	if (topology->boot_cpu->cpu_id != 0 || topology->boot_cpu->phys_id != 0) {
+-		panic("GINKGO CPU: expected boot MPIDR 0 and logical CPU 0");
+-	}
++	/* The ADT lists the A73s in order, so the boot CPU is logical 0
++	 * (MPIDR 0x100 on the phone, 0 in QEMU) - the shim hands off on an A73. */
++	if (topology->boot_cpu->cpu_id != 0) {
++		panic("GINKGO CPU: boot CPU is not logical CPU 0 (mpidr=0x%x)",
++		    topology->boot_cpu->phys_id);
++	}
++	IOLog("GINKGO CPU: boot CPU mpidr=0x%x, %u CPUs\n",
++	    topology->boot_cpu->phys_id, topology->num_cpus);
+ 	for (unsigned int i = 0; i < topology->num_cpus; i++) {
+ 		GinkgoCPU *cpu = __atomic_load_n(&ginkgo_cpus[i], __ATOMIC_ACQUIRE);
+ 		kern_return_t kr = processor_start(cpu->machProcessor);

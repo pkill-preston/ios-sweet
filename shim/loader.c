@@ -6,6 +6,12 @@
  * segments to phys_base + (vmaddr - virt_base), place the ADT and
  * boot_args behind the kernel, and jump to the entry point with the MMU
  * and caches off, x0 = boot_args (physical).
+ *
+ * The jump happens on a Cortex-A73. XNU is built with 16KB pages and the
+ * Cortex-A53s (MPIDR 0x00-0x03) implement only 4KB/64KB granules, so a
+ * kernel started on a silver core takes a translation fault as soon as the
+ * MMU comes on. If ABL started the shim on one, PSCI CPU_ON the first gold
+ * core with the same entry/boot_args and park this core.
  */
 #include <stdint.h>
 #include "console.h"
@@ -14,6 +20,10 @@
 
 #define BOOT_LINE_LENGTH	608
 #define PAGE_16K		0x4000UL
+
+#define PSCI_CPU_ON		0xc4000003UL
+#define PSCI_CPU_OFF		0x84000002UL
+#define GINKGO_BOOT_MPIDR	0x100UL		/* cpu4: first Cortex-A73, cluster 1 */
 
 struct payload_seg {
 	uint64_t vmaddr, vmsize, file_off, file_size;
@@ -75,6 +85,21 @@ static int magic_ok(const char *m)
 }
 
 typedef void (*xnu_entry_t)(uint64_t boot_args_pa);
+
+/* SMCCC 1.0: only x0 carries the signed result; x1-x17 may be clobbered. */
+static uint64_t smc(uint64_t fn, uint64_t a1, uint64_t a2, uint64_t a3)
+{
+	register uint64_t x0 __asm__("x0") = fn;
+	register uint64_t x1 __asm__("x1") = a1;
+	register uint64_t x2 __asm__("x2") = a2;
+	register uint64_t x3 __asm__("x3") = a3;
+	__asm__ volatile("smc #0"
+			 : "+r"(x0), "+r"(x1), "+r"(x2), "+r"(x3)
+			 :
+			 : "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11",
+			   "x12", "x13", "x14", "x15", "x16", "x17", "memory");
+	return x0;
+}
 
 const char *loader_boot(uintptr_t dtb)
 {
@@ -142,6 +167,24 @@ const char *loader_boot(uintptr_t dtb)
 
 	/* Everything was written with the MMU and caches off; drop any stale I-cache lines too. */
 	__asm__ volatile("dsb sy; ic iallu; dsb sy; isb" ::: "memory");
+
+	uint64_t mpidr;
+	__asm__ volatile("mrs %0, mpidr_el1" : "=r"(mpidr));
+	if (((mpidr >> 8) & 0xff) != ((GINKGO_BOOT_MPIDR >> 8) & 0xff)) {
+		/* Silver core: hand the same entry and boot_args to an A73. */
+		con_hex2("HANDOFF", "from=", (uint32_t)mpidr, "to=",
+			 (uint32_t)GINKGO_BOOT_MPIDR);
+		uint64_t rc = smc(PSCI_CPU_ON, GINKGO_BOOT_MPIDR, entry_pa, ba_pa);
+		con_hex("CPU_ON", rc);
+		if (rc == 0) {
+			/* Two cores running the kernel entry would be fatal. */
+			smc(PSCI_CPU_OFF, 0, 0, 0);
+			for (;;)
+				__asm__ volatile("wfe");
+		}
+		con_str("HANDOFF", "failed, booting on this core");
+	}
+
 	((xnu_entry_t)entry_pa)(ba_pa);
 	return "xnu returned";
 }

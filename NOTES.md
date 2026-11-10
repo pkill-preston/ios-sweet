@@ -15,8 +15,8 @@ been verified on this phone.
 - `tools/mkadt.py` carries this phone's numbers: phys base `0xc0000000` with
   2 GiB (the upper DDR bank, every static carve-out is below `0x62000000`),
   GICD `0xf200000` / GICR `0xf300000`, framebuffer `0x5c000000` 1080x2340,
-  CPUs at MPIDR `0x00-0x03` (A53) and `0x100-0x103` (A73), eMMC node
-  `ginkgo-emmc` at `sdhci@4744000` instead of a UFS node.
+  CPUs at MPIDR `0x100-0x103` (the four A73s; the A53s cannot run a 16K-page
+  kernel), eMMC node `ginkgo-emmc` at `sdhci@4744000` instead of a UFS node.
 - CI moved to `macos-15` (macOS 14 images were retired 2026-11-02) and patch
   `0082` backports `IORPC.kernelContent` for Xcode 16's iig.
 - **First QEMU boot (CI kernel `42851937680`, `artifacts/qemu/run6`).** Boots to
@@ -29,8 +29,17 @@ been verified on this phone.
   fault at the first `ISB` after `msr SCTLR_EL1` in `common_start`
   (`ESR 0x86000005`); `cortex-a76` boots. Per ARM TRMs, A53 has only 4K/64K,
   A73 has 16K. ginkgo: A53 = cluster 0 (`MPIDR 0x00-0x03`), A73 = cluster 1
-  (`MPIDR 0x100-0x103`). If ABL boots CPU0 (A53) the shim must move execution
-  to an A73 (PSCI `CPU_ON`) or the ADT must list only the A73s. Unresolved.
+  (`MPIDR 0x100-0x103`). Resolved as follows:
+  - `tools/mkadt.py` now lists **only the four A73s** (`reg` 0x100-0x103,
+    `cluster-type` SMP so XNU sees one cluster, boot CPU = `state=running`).
+    `GINKGO_SMP_MAX_CPUS` is 4 (patch `0083`).
+  - `shim/loader.c` checks its own `MPIDR_EL1`: off cluster 1 it does PSCI
+    `CPU_ON` for MPIDR 0x100 with the same entry and `x0 = boot_args`, then
+    `CPU_OFF`s itself. On an A73 it jumps directly.
+  - Patch `0083` also drops the driver's `(phys_id & 0xff) == 0` and
+    `boot_cpu->phys_id == 0` assumptions, which an A73-only ADT violates.
+  - `shim/console.h` now points at ginkgo's framebuffer (`0x5c000000`,
+    1080x2340, stride 0x10e0) instead of sweet's `0x9c000000`.
 - QEMU virtual-timer INTID is 27 (`-M virt` `/timer` PPI index 11 + 16); the
   phone's live FDT gives 19. `mkadt.py --qemu` emits `virtual-timer-intid`, and
   patch `0017` makes the kernel read it from the GIC node (a wrong value panics
@@ -47,8 +56,6 @@ been verified on this phone.
   hbp 0x50, hpw 0x04, vbp 0x0c, vfp 0x70, vpw 0x04, 60 Hz).
 - Touch driver: FocalTech FTS over SPI, IC 0x8719, reset GPIO 87, IRQ 88.
 - `mkadt.py --qemu` still emits one CPU; the QEMU harness runs `cpus=1` first.
-- Boot CPU / 16 KB granule: decide between PSCI `CPU_ON` onto an A73 from the
-  shim, or an ADT with only the four A73 cores (see above).
 - Build a root ramdisk/image and re-run QEMU to get past `VM bootstrap done`
   and confirm BSD mounts the root.
 - Names inherited from upstream (`sweet_ufs.c`, `GinkgoPlatformExpert`, the

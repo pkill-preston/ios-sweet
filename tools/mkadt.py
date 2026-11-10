@@ -45,6 +45,9 @@ EMMC_IRQ, EMMC_PWR_IRQ = 348, 352  # GIC SPIs
 EMMC_BUS_WIDTH = 8
 TIMEBASE = 19200000
 VTIMER_INTID = 19
+# Kryo 260 gold cluster: cpu4-7 are Cortex-A73 at MPIDR 0x100..0x103 (Aff1=1).
+# cpu0-3 are Cortex-A53 (MPIDR 0x00..0x03) and cannot run a 16KB-page kernel.
+GINKGO_A73_MPIDR = 0x100
 # QEMU virt (-M virt,gic-version=3 -cpu cortex-a76): GICD/GICR and the generic timer's CNTFRQ
 QEMU_GICD, QEMU_GICR, QEMU_TIMEBASE = 0x08000000, 0x080a0000, 62500000
 # QEMU virt's /timer node says PPI indices 13/14/11/10 (from -M virt,dumpdtb);
@@ -142,31 +145,33 @@ def build(seed=None, qemu=False, highmem=False):
         # with CSR_ALLOW_UNRESTRICTED_FS (vm_unix.c shared region checks).
         node('asmb', [ph(), ('lp-sip0', u64(0x6f)), ('lp-sip1', u32(1))])])
 
-    # GINKGO SMP: eight cores in physical order, matching the live FDT:
-    # cpu0-3 = Cortex-A53 at Aff1=0 (MPIDR 0x00..0x03, cluster 0),
-    # cpu4-7 = Cortex-A73 at Aff1=1 (MPIDR 0x100..0x103, cluster 1).
-    # The kernel defaults to one CPU and uses cpus=N for an initial prefix.
-    # QEMU retains its original single-CPU tree: its MPIDRs differ from ginkgo.
+    # GINKGO SMP: only the four Cortex-A73s are usable. XNU is built with 16KB
+    # pages, and the Cortex-A53 cluster (MPIDR 0x00..0x03) implements only the
+    # 4KB/64KB granules, so it faults the moment the MMU comes on (docs/qemu.md).
+    # The A73s are MPIDR 0x100..0x103 (Aff1=1, cluster 1 in the live FDT); the
+    # ADT presents them as one homogeneous cluster 0 so XNU does not attempt AMP.
+    # shim/loader.c starts the kernel on MPIDR 0x100 with PSCI CPU_ON.
+    # QEMU retains its original single-CPU tree (MPIDR 0).
     cpu_nodes = []
-    for core in range(1 if qemu else 8):
-        cluster = core >> 2
+    for core in range(1 if qemu else 4):
+        cluster = 0
         cpu_nodes.append(node(f'cpu{core}', [
             ph(),
             ('device_type', cstr('cpu')),
             ('compatible', cstr('qcom,kryo260') + cstr('ARM,v8')),
-            # actual MPIDR Aff1:Aff0, NOT logical ID
-            ('reg', u32((cluster << 8) | (core & 3))),
+            # actual MPIDR Aff1:Aff0, NOT logical ID: 0x100..0x103
+            ('reg', u32(GINKGO_A73_MPIDR | core)),
             ('cpu-id', u32(core)),   # descriptive: XNU assigns IDs by DT order
             ('cluster-id', u32(cluster)),
             ('cluster-type', u32(0)),  # homogeneous CLUSTER_TYPE_SMP, not AMP
             ('die-cluster-id', u32(0)),
-            ('cluster-core-id', u32(core & 3)),
+            ('cluster-core-id', u32(core)),
             ('l2-cache-id', u32(core)),  # distinct per-core L2 nodes in live FDT
             ('l3-cache-id', u32(0)),     # shared L3
             ('state', cstr('running' if core == 0 else 'stopped')),
             ('timebase-frequency', u32(timebase)),
-            # Kryo 260 Gold (A73) 2.0 GHz, Silver (A53) 1.8 GHz
-            ('clock-frequency', u32(2000000000 if cluster else 1804800000)),
+            # Kryo 260 Gold (Cortex-A73) 2.0 GHz
+            ('clock-frequency', u32(2000000000)),
             ('bus-frequency', u32(100000000)),
             ('memory-frequency', u32(1866000000)),
             ('peripheral-frequency', u32(timebase)),
