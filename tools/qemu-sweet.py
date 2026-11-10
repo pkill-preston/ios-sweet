@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Boot a SWEETXNU payload (tools/mkpayload.py) in QEMU's virt board.
 
-  qemu-sweet.py PAYLOAD OUTDIR [--secs N] [--gdb] [--live-serial]
+  qemu-ginkgo.py PAYLOAD OUTDIR [--secs N] [--gdb] [--live-serial]
 
 Does what shim/loader.c does on the phone, but on the host: places the
 kernel segments, ADT and boot_args at their physical addresses and starts
@@ -150,7 +150,7 @@ def decode_screen(raw, font):
 
 
 def screen_result(screen, unknown):
-    if 'panic(cpu ' in screen or 'SWEET EARLY PANIC:' in screen:
+    if 'panic(cpu ' in screen or 'GINKGO EARLY PANIC:' in screen:
         status = 'panic'
     elif unknown:
         status = 'incomplete_decode'
@@ -212,10 +212,10 @@ def main():
     ap = argparse.ArgumentParser(
         description="Boot a SWEETXNU payload in QEMU's virt board.",
         epilog="Examples:\n"
-               "  qemu-sweet.py payload.bin out/\n"
-               "  qemu-sweet.py payload.bin out/ --live-serial\n"
-               "  qemu-sweet.py payload.bin out/ --kernel kernel.macho --fail-on-panic\n"
-               "  qemu-sweet.py --check-env\n",
+               "  qemu-ginkgo.py payload.bin out/\n"
+               "  qemu-ginkgo.py payload.bin out/ --live-serial\n"
+               "  qemu-ginkgo.py payload.bin out/ --kernel kernel.macho --fail-on-panic\n"
+               "  qemu-ginkgo.py --check-env\n",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     ap.add_argument('payload', nargs='?', help='SWEETXNU payload binary (from mkpayload.py)')

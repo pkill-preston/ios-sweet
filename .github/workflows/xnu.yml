@@ -11,7 +11,7 @@ on:
         default: DEVELOPMENT
       machine_config:
         description: xnu MACHINE_CONFIG
-        default: SWEET
+        default: GINKGO
       keep_going:
         description: make -k (collect all compile errors in one run)
         default: "true"
@@ -30,13 +30,14 @@ env:
   DXB_SHA: 663906528d1cd5ea8fde7de6f16de73db9511549
   MACOS_VERSION: ${{ inputs.macos_version || '13.5' }}
   KERNEL_CONFIG: ${{ inputs.kernel_config || 'DEVELOPMENT' }}
-  MACHINE_CONFIG: ${{ inputs.machine_config || 'SWEET' }}
+  MACHINE_CONFIG: ${{ inputs.machine_config || 'GINKGO' }}
 
 jobs:
   build:
-    # macos-14 still ships Xcode 15.x: its iig matches the xnu-8796 IORPC ABI
-    # (Xcode 16's iig emits IORPC.kernelContent, which this xnu lacks)
-    runs-on: macos-14
+    # macOS 14 runner images were retired on 2026-11-02 and no current image
+    # ships Xcode 15, so the build runs on macos-15 with Xcode 16.
+    # patches/0082 backports IORPC.kernelContent, which Xcode 16's iig needs.
+    runs-on: macos-15
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
@@ -48,7 +49,7 @@ jobs:
           git -C dxb checkout -q FETCH_HEAD
           # 12.5-14.3 use the top-level patches dir; ours go next to blacktop's
           cp xnu/patches/*.patch xnu/patches/*.sh dxb/patches/
-          # libfirehose_kernel is built arm64e-only; the SWEET kernel is plain arm64
+          # libfirehose_kernel is built arm64e-only; the GINKGO kernel is plain arm64
           sed -i '' 's/ARCHS="x86_64 arm64e" VALID_ARCHS="x86_64 arm64e"/ARCHS="x86_64 arm64e arm64" VALID_ARCHS="x86_64 arm64e arm64"/' dxb/build.sh
           grep -c 'VALID_ARCHS="x86_64 arm64e arm64"' dxb/build.sh
           ls dxb/patches
@@ -56,9 +57,13 @@ jobs:
       - name: Deps
         run: |
           brew install jq gum bash cmake ninja
-          # build.sh only checks that xcodes exists (Xcode is preinstalled); no bottle on macOS 14
-          printf '#!/bin/sh\nexit 0\n' | sudo tee /usr/local/bin/xcodes >/dev/null
-          sudo chmod +x /usr/local/bin/xcodes
+          # build.sh only checks that xcodes exists (Xcode is preinstalled).
+          # Put the stub in $HOME/bin: /usr/local/bin is not writable/absent on
+          # arm64 runners.
+          mkdir -p "$HOME/bin"
+          printf '#!/bin/sh\nexit 0\n' > "$HOME/bin/xcodes"
+          chmod +x "$HOME/bin/xcodes"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
           sw_vers
           ls -d /Applications/Xcode*.app
           XC=$(ls -d /Applications/Xcode_*.app | sort -V | head -1)
@@ -123,4 +128,4 @@ jobs:
           path: out/
           if-no-files-found: warn
 
-# fork: re-register this workflow on pkill-preston/ios-sweet
+# fork: re-register this workflow on pkill-preston/ios-ginkgo

@@ -1,15 +1,15 @@
-# QEMU Emulation & Testing Guide for ios-sweet
+# QEMU Emulation & Testing Guide for ios-ginkgo
 
-This document explains how to test the patched Apple XNU kernel for the Redmi Note 10 Pro (`sweet`, SM7150) in QEMU virtual machine without touching physical hardware or risking device user data.
+This document explains how to test the patched Apple XNU kernel for the Redmi Note 8 (`ginkgo`, SM6125) in QEMU virtual machine without touching physical hardware or risking device user data.
 
 ---
 
 ## 1. Overview
 
-`tools/qemu-sweet.py` emulates the bare-metal boot shim loader on your host system:
-- It configures `qemu-system-aarch64` on the `virt` board with `gic-version=3` and CPU `cortex-a76` (matching the Kryo 470 Gold cores' `ID_AA64MMFR0` architecture).
-- It covers the physical memory layout (framebuffer at `0x9c000000`, kernel base at `0xb0000000`).
-- It extracts the visual 1080×2400 framebuffer into `fb.png`, captures registers into `regs.txt`, and logs exception interrupts into `qemu.log`.
+`tools/qemu-ginkgo.py` emulates the bare-metal boot shim loader on your host system:
+- It configures `qemu-system-aarch64` on the `virt` board with `gic-version=3` and CPU `cortex-a72` (QEMU has no Cortex-A73; the Kryo 260 Gold cores are ARMv8.0).
+- It covers the physical memory layout (framebuffer at `0x5c000000`, kernel base at `0xc0000000`).
+- It extracts the visual 1080×2340 framebuffer into `fb.png`, captures registers into `regs.txt`, and logs exception interrupts into `qemu.log`.
 - When provided with an unstripped kernel Mach-O, it automatically extracts `_iso_font` and decodes the framebuffer console text into `fb.txt` and `result.json`.
 
 ---
@@ -19,7 +19,7 @@ This document explains how to test the patched Apple XNU kernel for the Redmi No
 Verify your environment using the built-in check:
 
 ```sh
-python3 tools/qemu-sweet.py --check-env
+python3 tools/qemu-ginkgo.py --check-env
 ```
 
 If dependencies are missing, install them:
@@ -52,7 +52,7 @@ If dependencies are missing, install them:
 
 2. **Pack the Kernel and ADT into a SWEETXNU Payload:**
    ```sh
-   python3 tools/mkpayload.py xnu/out/kernel.development.sweet /tmp/qemu.adt /tmp/payload-qemu.bin \
+   python3 tools/mkpayload.py xnu/out/kernel.development.ginkgo /tmp/qemu.adt /tmp/payload-qemu.bin \
        --cmdline 'debug=0xc serial=3 cpus=1 keepsyms=1 -enable_kprintf_spam rd=md0'
    ```
 
@@ -62,27 +62,27 @@ If dependencies are missing, install them:
 
 ### Basic Run (20 Seconds Smoke Test)
 ```sh
-python3 tools/qemu-sweet.py /tmp/payload-qemu.bin /tmp/qemu_run --secs 20
+python3 tools/qemu-ginkgo.py /tmp/payload-qemu.bin /tmp/qemu_run --secs 20
 ```
 
 ### Live Console Streaming
 Stream serial kernel printf output live to your terminal:
 ```sh
-python3 tools/qemu-sweet.py /tmp/payload-qemu.bin /tmp/qemu_run --live-serial
+python3 tools/qemu-ginkgo.py /tmp/payload-qemu.bin /tmp/qemu_run --live-serial
 ```
 
 ### Automated CI / Regression Check (Fail on Panic)
 Exit with status code `2` if a panic occurred or `3` if blank/undecodable:
 ```sh
-python3 tools/qemu-sweet.py /tmp/payload-qemu.bin /tmp/qemu_run \
-    --kernel xnu/out/kernel.development.sweet \
+python3 tools/qemu-ginkgo.py /tmp/payload-qemu.bin /tmp/qemu_run \
+    --kernel xnu/out/kernel.development.ginkgo \
     --fail-on-panic
 ```
 
 ### Interactive GDB Debugging
 Start the machine halted with a GDB stub on port 1234:
 ```sh
-python3 tools/qemu-sweet.py /tmp/payload-qemu.bin /tmp/qemu_run --gdb
+python3 tools/qemu-ginkgo.py /tmp/payload-qemu.bin /tmp/qemu_run --gdb
 ```
 In another terminal:
 ```sh
@@ -94,7 +94,7 @@ gdb -ex "set architecture aarch64" -ex "target remote localhost:1234"
 ## 5. Output Artifacts
 
 Inside the specified output directory:
-- `fb.png`: The exact 1080×2400 panel framebuffer output.
+- `fb.png`: The exact 1080×2340 panel framebuffer output.
 - `fb.txt`: Decoded ASCII console text from the framebuffer.
 - `regs.txt`: Register state dumped via QMP at the end of the run.
 - `qemu.log`: Guest exceptions (interrupts, data aborts, translation faults).
