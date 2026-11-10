@@ -47,6 +47,9 @@ TIMEBASE = 19200000
 VTIMER_INTID = 19
 # QEMU virt (-M virt,gic-version=3 -cpu cortex-a76): GICD/GICR and the generic timer's CNTFRQ
 QEMU_GICD, QEMU_GICR, QEMU_TIMEBASE = 0x08000000, 0x080a0000, 62500000
+# QEMU virt's /timer node says PPI indices 13/14/11/10 (from -M virt,dumpdtb);
+# the GIC INTID is 16 + index, so the virtual timer is 27. (The phone's live
+# FDT lists indices 1/2/3/0 -> 17/18/19/16, virtual = 19.)
 QEMU_VTIMER_INTID = 27
 
 BOOT_MANIFEST_HASH = hashlib.sha384(b'ginkgo boot manifest').digest()

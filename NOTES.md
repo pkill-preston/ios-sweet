@@ -19,6 +19,22 @@ been verified on this phone.
   `ginkgo-emmc` at `sdhci@4744000` instead of a UFS node.
 - CI moved to `macos-15` (macOS 14 images were retired 2026-11-02) and patch
   `0082` backports `IORPC.kernelContent` for Xcode 16's iig.
+- **First QEMU boot (CI kernel `42851937680`, `artifacts/qemu/run6`).** Boots to
+  kernel idle with `-cpu cortex-a76`: GINKGO FB/AKS/WDT/SURF/HID/BATTERY/PRNG/
+  pthread/AMFI register, `VM bootstrap done: 85 maps, 165 entries and 501 holes
+  left`, then idles in `machine_idle` (~61 timer IRQs/s). No panic; `qemu.log`
+  has only IRQs. No root image yet (`rd=md0`), so it stops after VM bootstrap.
+- **16 KB granule is the CPU constraint.** `TCR_EL1_BOOT = 0x226511a511` uses
+  16 KB pages, so the boot CPU needs `TGran16 = 1`. `cortex-a53`/`cortex-a72`
+  fault at the first `ISB` after `msr SCTLR_EL1` in `common_start`
+  (`ESR 0x86000005`); `cortex-a76` boots. Per ARM TRMs, A53 has only 4K/64K,
+  A73 has 16K. ginkgo: A53 = cluster 0 (`MPIDR 0x00-0x03`), A73 = cluster 1
+  (`MPIDR 0x100-0x103`). If ABL boots CPU0 (A53) the shim must move execution
+  to an A73 (PSCI `CPU_ON`) or the ADT must list only the A73s. Unresolved.
+- QEMU virtual-timer INTID is 27 (`-M virt` `/timer` PPI index 11 + 16); the
+  phone's live FDT gives 19. `mkadt.py --qemu` emits `virtual-timer-intid`, and
+  patch `0017` makes the kernel read it from the GIC node (a wrong value panics
+  in `pe_init_fiq`).
 
 **Not done / next**
 
@@ -31,6 +47,10 @@ been verified on this phone.
   hbp 0x50, hpw 0x04, vbp 0x0c, vfp 0x70, vpw 0x04, 60 Hz).
 - Touch driver: FocalTech FTS over SPI, IC 0x8719, reset GPIO 87, IRQ 88.
 - `mkadt.py --qemu` still emits one CPU; the QEMU harness runs `cpus=1` first.
+- Boot CPU / 16 KB granule: decide between PSCI `CPU_ON` onto an A73 from the
+  shim, or an ADT with only the four A73 cores (see above).
+- Build a root ramdisk/image and re-run QEMU to get past `VM bootstrap done`
+  and confirm BSD mounts the root.
 - Names inherited from upstream (`sweet_ufs.c`, `GinkgoPlatformExpert`, the
   `site/` directory) are cosmetic leftovers; the device facts are what matter.
 

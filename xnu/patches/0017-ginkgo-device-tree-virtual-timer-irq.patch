@@ -15,7 +15,7 @@ diff --git a/pexpert/arm/pe_fiq.c b/pexpert/arm/pe_fiq.c
  MACHINE_TIMEOUT(gicr_wake_timeout_ns, "gicr-wake-timeout", GICR_WAKE_TIMEOUT_NS, MACHINE_TIMEOUT_UNIT_NSEC, NULL);
 +
 +#if defined(GINKGO)
-+/* Phone default; QEMU virt wires the architected virtual timer to INTID 27. */
++/* Phone default; QEMU virt uses INTID 27, and the ADT overrides it. */
 +SECURITY_READ_ONLY_LATE(uint32_t) ginkgo_vtimer_intid = GINKGO_VTIMER_INTID;
 +#endif
  
