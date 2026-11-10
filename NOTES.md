@@ -63,6 +63,15 @@ been verified on this phone.
   breakpoints at `kernel_bootstrap_thread`/`PE_init_iokit`/`bsd_init`
   (note: kill the previous QEMU first, a stale one keeps :1234 and the next
   `--gdb` run attaches to the old VM).
+- **Watching QEMU live.** The kernel console is the panel, not a UART, so
+  `serial.txt` is always empty and a normal run only leaves a final screenshot.
+  `tools/qemu-live.py OUTDIR` attaches to a running run's QMP socket and polls
+  the framebuffer: it rewrites `fb.png`/`fb-view.png` for a viewer
+  (`display -update`) and, with `--payload` + `--kernel`, prints only the
+  console lines added since the last frame. `tools/qemu-ginkgo.py … --watch`
+  does both in one command (long run + live viewer; Ctrl-C quits the guest).
+  Text stream verified against `run25`/`live1`/`live4`: platform expert, all
+  drivers, `VM bootstrap done`, then the `copyout` fault loop.
 - QEMU virtual-timer INTID is 27 (`-M virt` `/timer` PPI index 11 + 16); the
   phone's live FDT gives 19. `mkadt.py --qemu` emits `virtual-timer-intid`, and
   patch `0017` makes the kernel read it from the GIC node (a wrong value panics
