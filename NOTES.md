@@ -40,6 +40,11 @@ been verified on this phone.
     `boot_cpu->phys_id == 0` assumptions, which an A73-only ADT violates.
   - `shim/console.h` now points at ginkgo's framebuffer (`0x5c000000`,
     1080x2340, stride 0x10e0) instead of sweet's `0x9c000000`.
+  - QEMU keeps a single CPU at `reg = 0`: the kernel looks itself up with
+    `ml_get_cpu_number_local()` (full MPIDR), and an ADT that lies about
+    MPIDR panics with `machine_routines.c:1244 cpu_id <=
+    ml_get_max_cpu_number()`. Kernel build: CI run `42859385837`;
+    `artifacts/qemu/run18` boots to `VM bootstrap done` with only IRQs.
 - QEMU virtual-timer INTID is 27 (`-M virt` `/timer` PPI index 11 + 16); the
   phone's live FDT gives 19. `mkadt.py --qemu` emits `virtual-timer-intid`, and
   patch `0017` makes the kernel read it from the GIC node (a wrong value panics

@@ -159,8 +159,10 @@ def build(seed=None, qemu=False, highmem=False):
             ph(),
             ('device_type', cstr('cpu')),
             ('compatible', cstr('qcom,kryo260') + cstr('ARM,v8')),
-            # actual MPIDR Aff1:Aff0, NOT logical ID: 0x100..0x103
-            ('reg', u32(GINKGO_A73_MPIDR | core)),
+            # actual MPIDR Aff1:Aff0, NOT logical ID: 0x100..0x103 on the
+            # phone; QEMU's single virt CPU is MPIDR 0 and the kernel looks
+            # itself up by that value (ml_get_cpu_number_local).
+            ('reg', u32(0 if qemu else (GINKGO_A73_MPIDR | core))),
             ('cpu-id', u32(core)),   # descriptive: XNU assigns IDs by DT order
             ('cluster-id', u32(cluster)),
             ('cluster-type', u32(0)),  # homogeneous CLUSTER_TYPE_SMP, not AMP
