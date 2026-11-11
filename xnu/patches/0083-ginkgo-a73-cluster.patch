@@ -8,8 +8,8 @@ homogeneous SMP cluster, and the shim starts the kernel on MPIDR 0x100
 with PSCI CPU_ON, so this driver must accept a boot CPU whose MPIDR is
 not 0 and cores whose Aff0 is not 0.
 
---- a/xnu/pexpert/pexpert/arm64/GINKGO.h
-+++ b/xnu/pexpert/pexpert/arm64/GINKGO.h
+--- a/pexpert/pexpert/arm64/GINKGO.h
++++ b/pexpert/pexpert/arm64/GINKGO.h
 @@ -19,12 +19,14 @@
  #define GINKGO                     1
  
@@ -30,8 +30,8 @@ not 0 and cores whose Aff0 is not 0.
  
  #define ARM_ARCH_TIMER
  #define __ARM_ARCH__              8
---- a/xnu/iokit/Kernel/arm/GinkgoCPU.cpp
-+++ b/xnu/iokit/Kernel/arm/GinkgoCPU.cpp
+--- a/iokit/Kernel/arm/GinkgoCPU.cpp
++++ b/iokit/Kernel/arm/GinkgoCPU.cpp
 @@ -73,8 +73,11 @@
  	if (*(const uint32_t *)reg->getBytesNoCopy() != cpu->phys_id) {
  		return false;
@@ -74,3 +74,13 @@ not 0 and cores whose Aff0 is not 0.
  	for (unsigned int i = 0; i < topology->num_cpus; i++) {
  		GinkgoCPU *cpu = __atomic_load_n(&ginkgo_cpus[i], __ATOMIC_ACQUIRE);
  		kern_return_t kr = processor_start(cpu->machProcessor);
+--- a/iokit/KernelConfigTables.cpp
++++ b/iokit/KernelConfigTables.cpp
+@@ -44,6 +44,6 @@
+     "   {"
+     "     'IOClass'         = GinkgoCPU;"
+     "     'IOProviderClass' = IOPlatformDevice;"
+-    "     'IONameMatch'     = 'qcom,kryo470';"
++    "     'IONameMatch'     = 'qcom,kryo260';"
+     "     'IOProbeScore'    = 10000:32;"
+     "   },"
